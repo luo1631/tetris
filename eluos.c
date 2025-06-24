@@ -476,7 +476,6 @@ int main() {
     while (1) {
         initGame();
         gameLoop();
-
         system("cls");
         gotoxy(15, 10);
         printf("游戏结束！最终得分：%d", score);
