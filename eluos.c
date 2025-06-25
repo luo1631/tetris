@@ -8,7 +8,7 @@
 #define WIDTH 12
 #define HEIGHT 20
 #define BLOCK_SIZE 2
-// 定义方块显示符号，初始为“■”，后续可切换为“██”
+// 定义方块显示符号，初始为"■"，后续可切换为"██"
 char BLOCK[8] = "■";
 
 // 定义颜色
@@ -101,6 +101,7 @@ void showStartScreen();            // 显示开始界面
 void drawPauseMessage();           // 绘制暂停提示
 int canMoveShape(int shape[4][4], int x, int y);  // 检查任意形状在指定位置是否可以移动（用于旋转判定）
 void checkBlockSymbol();            // 方块符号自适应检测
+int getSpeedByScore();             // 根据分数获取下落速度
 
 // 设置控制台编码为UTF-8
 void setUTF8() {
@@ -145,7 +146,7 @@ void drawBorder() {
 
     // 侧边框
     for(int i = 1; i <= HEIGHT; i++) {
-        gotoxy(0, i); printf("|"); // 左
+        gotoxy(0, i); printf("|"); // 左侧边界
         gotoxy(WIDTH+1, i); printf("|"); // 游戏区中线
         gotoxy(WIDTH+1+WIDTH, i); printf("|"); // 信息区右边界
     }
@@ -330,7 +331,7 @@ void clearLines() {
             i++;
         }
     }
-    score += linesCleared * 100;
+    score += linesCleared * 10;
     if(score > highScore) {
         highScore = score;
     }
@@ -351,11 +352,30 @@ void initGame() {
     generateNewShape();
 }
 
+// 根据分数获取下落速度
+int getSpeedByScore() {
+    int baseSpeed = 500;
+    double speed = 1.0 + 9.0 * (score / 10000.0); // 1倍到10倍线性增长
+    return (int)(baseSpeed / speed);
+}
+
 // 游戏主循环
 void gameLoop() {
     clock_t lastMove = clock();
     
     while(!gameOver) {
+        if(score >= 10000) {
+            gameOver = 1;
+            system("cls");
+            gotoxy(15, 10);
+            printf("你赢了！最终得分：%d", score);
+            gotoxy(15, 11);
+            printf("最高分纪录：%d", highScore);
+            gotoxy(15, 13);
+            printf("按任意键退出...");
+            getch();
+            break;
+        }
         if(kbhit()) {
             int key = getch();
             // 处理方向键
@@ -410,7 +430,7 @@ void gameLoop() {
         }
         
         if(!isPaused) {
-            if(clock() - lastMove > 500) {
+            if(clock() - lastMove > getSpeedByScore()) {
                 moveDown();
                 lastMove = clock();
             }
