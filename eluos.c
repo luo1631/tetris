@@ -4,16 +4,20 @@
 #include <windows.h>
 #include <time.h>
 #include <string.h>
-// 定义游戏区域大小
+#include <mmsystem.h>  // 添加多媒体库头文件
+#pragma comment(lib, "winmm.lib")  // 链接winmm库
+
+// 游戏区域定义
 #define WIDTH 12
 #define HEIGHT 20
 #define BLOCK_SIZE 2
-// 定义方块显示符号，初始为"■"，后续可切换为多种样式
+
+// 方块显示符号选项
 const char* BLOCK_OPTIONS[] = {"■", "██", "[]", "口","▣", "▤", "▥", "▦", "▧", "▨", "▩"};
 #define BLOCK_OPTION_COUNT (sizeof(BLOCK_OPTIONS)/sizeof(BLOCK_OPTIONS[0]))
-int currentBlockIndex = 0; // 当前选中的方块样式索引
+int currentBlockIndex = 0;
 
-// 定义颜色
+// 颜色定义
 #define COLOR_BLACK 0
 #define COLOR_BLUE 1
 #define COLOR_GREEN 2
@@ -24,16 +28,15 @@ int currentBlockIndex = 0; // 当前选中的方块样式索引
 #define COLOR_WHITE 7
 
 // 按键冷却时间（毫秒）
-#define KEY_COOLDOWN 200
-clock_t lastKeyTime = 0; // 上次按键时间
+#define KEY_COOLDOWN 100
+clock_t lastKeyTime = 0;
 
-// 难度级别
+// 难度级别和速度定义
 #define DIFFICULTY_EASY 1
 #define DIFFICULTY_NORMAL 2
 #define DIFFICULTY_HARD 3
 #define DIFFICULTY_HELL 4
 
-// 不同难度的初始下落间隔（毫秒）
 #define SPEED_EASY 750
 #define SPEED_NORMAL 500
 #define SPEED_HARD 250
@@ -41,7 +44,18 @@ clock_t lastKeyTime = 0; // 上次按键时间
 
 int currentDifficulty = DIFFICULTY_NORMAL; // 默认难度为普通
 
-// 定义方块形状
+// 音乐和音效相关
+#define SOUND_ROTATE "sounds\\rotate.wav"    // 旋转音效
+#define SOUND_MOVE "sounds\\move.wav"        // 移动音效
+#define SOUND_DROP "sounds\\drop.wav"        // 方块落地音效
+#define SOUND_CLEAR "sounds\\clear.wav"      // 消行音效
+#define SOUND_GAMEOVER "sounds\\gameover.wav"// 游戏结束音效
+#define MUSIC_THEME "sounds\\theme1.mp3"      // 游戏背景音乐
+#define MUSIC_MENU "sounds\\theme2.mp3"      // 菜单音乐
+int isMusicEnabled = 1;                      // 背景音乐开关
+int isSoundEnabled = 1;                      // 音效开关
+
+// 方块形状定义
 int shapes[7][4][4] = {
     // I形方块
     {
@@ -118,44 +132,100 @@ int nextColor2 = COLOR_GREEN;       // 玩家2下一个方块颜色
 int isMultiplayerMode = 0;          // 是否为双人模式
 
 // 函数声明
-void initGame();                   // 初始化游戏
-void drawBorder();                 // 绘制边框
-void drawGameArea();               // 绘制游戏区域
-void drawNextShape();              // 绘制下一个方块
-void drawScore();                  // 绘制分数
-void drawControls();               // 绘制控制说明
-void generateNewShape();           // 生成新方块
-void rotateShape();                // 旋转方块
-int canMove(int x, int y);         // 检查是否可以移动
-void moveDown();                   // 方块下落
-void clearLines();                 // 清除已满行
-void gameLoop();                   // 游戏主循环
-void showStartScreen();            // 显示开始界面
-void drawPauseMessage();           // 绘制暂停提示
-int canMoveShape(int shape[4][4], int x, int y);  // 检查任意形状在指定位置是否可以移动（用于旋转判定）
-void styleChangeScreen();           // 方块样式更改界面
-void switchBlockSymbol();            // 切换方块符号
-int getSpeedByScore();             // 根据分数获取下落速度
-void setUTF8();                    // 设置UTF-8编码
-void setColor(int color);          // 设置颜色
-void gotoxy(int x, int y);         // 移动光标到指定位置
-void difficultySelectScreen();     // 难度选择界面
+// 基础功能
+void setUTF8(); // 设置控制台编码为UTF-8，确保中文正常显示
+void setColor(int color); // 设置控制台文本颜色，用于显示不同颜色的方块和文字
+void gotoxy(int x, int y); // 移动光标到指定位置，用于在屏幕上精确绘制内容
 
-// 双人模式函数声明
-void initTwoPlayerGame();          // 初始化双人游戏
-void drawTwoPlayerBorder();        // 绘制双人模式边框
-void drawTwoPlayerGameArea();      // 绘制双人模式游戏区域
-void drawTwoPlayerNextShape();     // 绘制双人模式下一个方块
-void drawTwoPlayerScore();         // 绘制双人模式分数
-void drawTwoPlayerControls();      // 绘制双人模式控制说明
-void generateNewShape2();          // 为玩家2生成新方块
-void rotateShape2();               // 玩家2旋转方块
-int canMove2(int x, int y);        // 检查玩家2是否可以移动
-void moveDown2();                  // 玩家2方块下落
-void clearLines2();                // 清除玩家2已满行
-void twoPlayerGameLoop();          // 双人游戏主循环
-void drawTwoPlayerPauseMessage();  // 绘制双人模式暂停提示
-int canMoveShape2(int shape[4][4], int x, int y);  // 检查玩家2任意形状在指定位置是否可以移动
+// 游戏界面
+void showStartScreen(); // 显示游戏开始界面，包含游戏模式选择和设置选项
+void difficultySelectScreen(); // 显示难度选择界面，提供简单到地狱四个难度级别
+void styleChangeScreen(); // 显示方块样式设置界面，允许更改方块显示样式
+void soundSettingsScreen(); // 显示音效设置界面，控制背景音乐和音效的开关
+
+// 单人模式
+void initGame(); // 初始化单人游戏，设置游戏区域和初始状态
+void drawBorder(); // 绘制游戏边界，创建游戏区域的视觉边框
+void drawGameArea(); // 绘制游戏区域，显示已固定的方块和当前方块
+void drawNextShape(); // 显示下一个将出现的方块形状
+void drawScore(); // 显示当前分数、最高分和难度等级
+void drawControls(); // 显示游戏控制说明，包括按键指南
+void drawPauseMessage(); // 显示游戏暂停信息
+void generateNewShape(); // 生成新的方块，设置其初始位置和颜色
+int canMove(int x, int y); // 检查当前方块是否可以移动到指定位置
+int canMoveShape(int shape[4][4], int x, int y); // 检查指定形状是否可以移动到指定位置
+void rotateShape(); // 旋转当前方块，检查旋转是否可行
+void moveDown(); // 使当前方块向下移动一格
+void clearLines(); // 检查并清除已填满的行，计算得分
+void gameLoop(); // 单人模式主游戏循环，处理游戏逻辑和用户输入
+
+// 双人模式
+void initTwoPlayerGame(); // 初始化双人游戏，设置两个玩家的游戏区域
+void drawTwoPlayerBorder(); // 绘制双人模式的游戏边界
+void drawTwoPlayerGameArea(); // 绘制双人模式的游戏区域
+void drawTwoPlayerNextShape(); // 显示两个玩家的下一个方块
+void drawTwoPlayerScore(); // 显示两个玩家的分数
+void drawTwoPlayerControls(); // 显示双人模式的控制说明
+void drawTwoPlayerPauseMessage(); // 显示双人模式的暂停信息
+void generateNewShape2(); // 为玩家2生成新的方块
+void rotateShape2(); // 旋转玩家2的当前方块
+int canMove2(int x, int y); // 检查玩家2的方块是否可以移动到指定位置
+int canMoveShape2(int shape[4][4], int x, int y); // 检查玩家2的指定形状是否可以移动到指定位置
+void moveDown2(); // 使玩家2的方块向下移动一格
+void clearLines2(); // 检查并清除玩家2区域已填满的行
+void twoPlayerGameLoop(); // 双人模式主游戏循环
+
+// 辅助功能
+void switchBlockSymbol(); // 切换方块显示样式，在预定义样式中循环
+int getSpeedByScore(); // 根据当前分数计算方块下落速度
+
+// 音效相关
+void playBackgroundMusic(); // 播放游戏背景音乐
+void stopBackgroundMusic(); // 停止游戏背景音乐
+void playSound(const char* sound); // 播放指定的音效文件
+void checkSoundFiles(); // 检查音效文件是否存在
+void createSampleSoundFiles(); // 创建示例音效文件
+void playMenuMusic(); // 播放菜单背景音乐
+void stopMenuMusic(); // 停止菜单背景音乐
+
+// 根据分数和难度计算下落速度
+int getSpeedByScore() {
+    int baseSpeed;
+    switch(currentDifficulty) {
+        case DIFFICULTY_EASY:   baseSpeed = SPEED_EASY; break;
+        case DIFFICULTY_NORMAL: baseSpeed = SPEED_NORMAL; break;
+        case DIFFICULTY_HARD:   baseSpeed = SPEED_HARD; break;
+        case DIFFICULTY_HELL:   baseSpeed = SPEED_HELL; break;
+        default:               baseSpeed = SPEED_NORMAL;
+    }
+    
+    double speed = 1.0 + 9.0 * (score / 10000.0); // 1倍到10倍线性增长
+    return (int)(baseSpeed / speed);
+}
+
+// 设置控制台编码为UTF-8
+void setUTF8() {
+    SetConsoleOutputCP(65001);
+    SetConsoleCP(65001);
+}
+
+// 设置控制台颜色
+void setColor(int color) {
+    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
+}
+
+// 移动光标到指定位置
+void gotoxy(int x, int y) {
+    COORD coord;
+    coord.X = x * 2;  // 乘以2是因为每个方块占两个字符宽度
+    coord.Y = y;
+    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coord);
+}
+
+// 切换方块符号
+void switchBlockSymbol() {
+    currentBlockIndex = (currentBlockIndex + 1) % BLOCK_OPTION_COUNT;
+}
 
 // 难度选择界面
 void difficultySelectScreen() {
@@ -179,22 +249,10 @@ void difficultySelectScreen() {
         gotoxy(13, 17);
         printf("当前难度: ");
         switch(currentDifficulty) {
-            case DIFFICULTY_EASY:
-                setColor(COLOR_GREEN);
-                printf("简单");
-                break;
-            case DIFFICULTY_NORMAL:
-                setColor(COLOR_YELLOW);
-                printf("普通");
-                break;
-            case DIFFICULTY_HARD:
-                setColor(COLOR_PURPLE);
-                printf("困难");
-                break;
-            case DIFFICULTY_HELL:
-                setColor(COLOR_RED);
-                printf("地狱");
-                break;
+            case DIFFICULTY_EASY:   setColor(COLOR_GREEN);  printf("简单"); break;
+            case DIFFICULTY_NORMAL: setColor(COLOR_YELLOW); printf("普通"); break;
+            case DIFFICULTY_HARD:   setColor(COLOR_PURPLE); printf("困难"); break;
+            case DIFFICULTY_HELL:   setColor(COLOR_RED);    printf("地狱"); break;
         }
         
         setColor(COLOR_GREEN);
@@ -202,96 +260,196 @@ void difficultySelectScreen() {
         printf("按1-4选择难度，按Q返回主菜单");
         
         int key = getch();
-        if (key == '1') {
-            currentDifficulty = DIFFICULTY_EASY;
-        } else if (key == '2') {
-            currentDifficulty = DIFFICULTY_NORMAL;
-        } else if (key == '3') {
-            currentDifficulty = DIFFICULTY_HARD;
-        } else if (key == '4') {
-            currentDifficulty = DIFFICULTY_HELL;
+        if (key == '1')      currentDifficulty = DIFFICULTY_EASY;
+        else if (key == '2') currentDifficulty = DIFFICULTY_NORMAL;
+        else if (key == '3') currentDifficulty = DIFFICULTY_HARD;
+        else if (key == '4') currentDifficulty = DIFFICULTY_HELL;
+        else if (key == 'q' || key == 'Q') running = 0;
+    }
+}
+
+// 方块样式更改界面
+void styleChangeScreen() {
+    int running = 1;
+    while (running) {
+        system("cls");
+        setColor(COLOR_CYAN);
+        gotoxy(10, 6);
+        printf(" %s <--这是当前方块样式", BLOCK_OPTIONS[currentBlockIndex]);
+        setColor(COLOR_WHITE);
+        gotoxy(10, 10);
+        printf("（按X键切换方块，按Q键退出，若显示为空，请按x进行样式更改）");
+        int key = getch();
+        if (key == 'x' || key == 'X') {
+            switchBlockSymbol();
         } else if (key == 'q' || key == 'Q') {
             running = 0;
         }
     }
 }
 
-// 设置控制台编码为UTF-8
-void setUTF8() {
-    SetConsoleOutputCP(65001);
-    SetConsoleCP(65001);
+// 音效设置界面
+void soundSettingsScreen() {
+    int running = 1;
+    while (running) {
+        system("cls");
+        setColor(COLOR_CYAN);
+        gotoxy(14, 6);
+        printf("音效设置");
+        
+        setColor(COLOR_WHITE);
+        gotoxy(10, 9);
+        printf("1. 背景音乐: %s", isMusicEnabled ? "开" : "关");
+        gotoxy(10, 11);
+        printf("2. 游戏音效: %s", isSoundEnabled ? "开" : "关");
+        
+        setColor(COLOR_GREEN);
+        gotoxy(10, 14);
+        printf("按1-2切换设置，按Q返回主菜单");
+        
+        int key = getch();
+        if (key == '1') {
+            isMusicEnabled = !isMusicEnabled;
+            if (isMusicEnabled) {
+                playMenuMusic();
+            } else {
+                stopMenuMusic();
+                stopBackgroundMusic();
+            }
+        } else if (key == '2') {
+            isSoundEnabled = !isSoundEnabled;
+        } else if (key == 'q' || key == 'Q') {
+            running = 0;
+        }
+    }
 }
 
-// 设置控制台颜色
-void setColor(int color) {
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
-}
-
-// 移动光标到指定位置
-void gotoxy(int x, int y) {
-    COORD coord;
-    coord.X = x *2;  // 乘以2是因为每个方块占两个字符宽度
-    coord.Y = y;
-    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coord);
-}
-
-// 显示开始界面（菜单样式）
+// 显示开始界面
 void showStartScreen() {
-    int menuSelect = 0;
+    stopBackgroundMusic();
+    playMenuMusic();
+    
     while (1) {
         system("cls");
         setColor(COLOR_CYAN);
         gotoxy(13, 6);
         printf("俄罗斯方块--游戏");
+        
         setColor(COLOR_WHITE);
-        gotoxy(15, 9);
-        printf("开始游戏");
-        gotoxy(15, 11);
-        printf("双人模式");
-        gotoxy(15, 13);
-        printf("难度选择");
+        gotoxy(15, 9);  printf("开始游戏");
+        gotoxy(15, 11); printf("双人模式");
+        gotoxy(15, 13); printf("难度选择");
         
         // 显示当前难度
         gotoxy(28, 13);
         printf("(当前: ");
         switch(currentDifficulty) {
-            case DIFFICULTY_EASY:
-                printf("简单)");
-                break;
-            case DIFFICULTY_NORMAL:
-                printf("普通)");
-                break;
-            case DIFFICULTY_HARD:
-                printf("困难)");
-                break;
-            case DIFFICULTY_HELL:
-                printf("地狱)");
-                break;
+            case DIFFICULTY_EASY:   setColor(COLOR_GREEN);  printf("简单)"); break;
+            case DIFFICULTY_NORMAL: setColor(COLOR_YELLOW); printf("普通)"); break;
+            case DIFFICULTY_HARD:   setColor(COLOR_PURPLE); printf("困难)"); break;
+            case DIFFICULTY_HELL:   setColor(COLOR_RED);    printf("地狱)"); break;
         }
         
-        gotoxy(15, 15);
-        printf("样式更改");
-        gotoxy(15, 17);
-        printf("退出游戏");
+        setColor(COLOR_WHITE);
+        gotoxy(15, 15); printf("样式更改");
+        gotoxy(15, 17); printf("音效设置");
+        gotoxy(15, 19); printf("退出游戏");
+        
         setColor(COLOR_GREEN);
         gotoxy(1, 22);
-        printf("（1~5键进行选择，若为首次游戏，开始游戏前，请先按4查看方块是否显示正常）");
+        printf("（1~6键进行选择，若为首次游戏，开始游戏前，请先按4查看方块是否显示正常）");
+        
         int key = getch();
         if (key == '1') {
-            menuSelect = 1;
             isMultiplayerMode = 0;
+            stopMenuMusic();
             break;
         } else if (key == '2') {
-            menuSelect = 2;
             isMultiplayerMode = 1;
+            stopMenuMusic();
             break;
         } else if (key == '3') {
             difficultySelectScreen();
         } else if (key == '4') {
             styleChangeScreen();
         } else if (key == '5') {
+            soundSettingsScreen();
+        } else if (key == '6') {
+            stopMenuMusic();
             exit(0);
         }
+    }
+}
+
+// 初始化游戏
+void initGame() {
+    system("cls");
+    srand(time(NULL));
+    score = 0;
+    gameOver = 0;
+    isPaused = 0;
+    memset(gameArea, 0, sizeof(gameArea));
+    
+    int shapeIndex = rand() % 7;
+    memcpy(nextShape, shapes[shapeIndex], sizeof(nextShape));
+    generateNewShape();
+    
+    stopMenuMusic();
+    playBackgroundMusic();
+}
+
+// 检查是否可以移动
+int canMove(int x, int y) {
+    for(int i = 0; i < 4; i++) {
+        for(int j = 0; j < 4; j++) {
+            if(currentShape[i][j]) {
+                int newX = x + j;
+                int newY = y + i;
+                if(newX < 0 || newX >= WIDTH || newY >= HEIGHT) return 0;
+                if(newY >= 0 && gameArea[newY][newX]) return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+// 检查任意形状在指定位置是否可以移动
+int canMoveShape(int shape[4][4], int x, int y) {
+    for(int i = 0; i < 4; i++) {
+        for(int j = 0; j < 4; j++) {
+            if(shape[i][j]) {
+                int newX = x + j;
+                int newY = y + i;
+                if(newX < 0 || newX >= WIDTH || newY >= HEIGHT) return 0;
+                if(newY >= 0 && gameArea[newY][newX]) return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+// 生成新方块
+void generateNewShape() {
+    memcpy(currentShape, nextShape, sizeof(currentShape));
+    currentX = WIDTH/2 - 2;
+    currentY = 0;
+    currentColor = nextColor;
+    
+    int shapeIndex = rand() % 7;
+    memcpy(nextShape, shapes[shapeIndex], sizeof(nextShape));
+    nextColor = 1 + rand() % 7; // 1~7，避免黑色
+}
+
+// 旋转方块
+void rotateShape() {
+    int temp[4][4];
+    for(int i = 0; i < 4; i++)
+        for(int j = 0; j < 4; j++)
+            temp[i][j] = currentShape[3-j][i];
+    
+    if(canMoveShape(temp, currentX, currentY)) {
+        memcpy(currentShape, temp, sizeof(currentShape));
+        playSound(SOUND_ROTATE);
     }
 }
 
@@ -358,25 +516,29 @@ void drawNextShape() {
 // 绘制分数
 void drawScore() {
     setColor(COLOR_WHITE);
-    gotoxy(WIDTH+5, 10);
+    gotoxy(WIDTH+5, 8);
     printf("当前分数: %d", score);
-    gotoxy(WIDTH+5, 11);
+    gotoxy(WIDTH+5, 9);
     printf("最高分数: %d", highScore);
-    gotoxy(WIDTH+5, 12);
+    gotoxy(WIDTH+5, 10);
     
     // 显示当前难度
     printf("当前难度: ");
     switch(currentDifficulty) {
         case DIFFICULTY_EASY:
+            setColor(COLOR_GREEN);
             printf("简单");
             break;
         case DIFFICULTY_NORMAL:
+            setColor(COLOR_YELLOW);
             printf("普通");
             break;
         case DIFFICULTY_HARD:
+            setColor(COLOR_PURPLE);
             printf("困难");
             break;
         case DIFFICULTY_HELL:
+            setColor(COLOR_RED);
             printf("地狱");
             break;
     }
@@ -385,17 +547,17 @@ void drawScore() {
 // 绘制控制说明
 void drawControls() {
     setColor(COLOR_WHITE);
-    gotoxy(WIDTH+5, 13);
+    gotoxy(WIDTH+5, 12);
     printf("控制说明:");
-    gotoxy(WIDTH+5, 14);
+    gotoxy(WIDTH+5, 13);
     printf("←→: 左右移动");
-    gotoxy(WIDTH+5, 15);
+    gotoxy(WIDTH+5, 14);
     printf("↑: 旋转");
-    gotoxy(WIDTH+5, 16);
+    gotoxy(WIDTH+5, 15);
     printf("空格: 快速下落");
-    gotoxy(WIDTH+5, 17);
+    gotoxy(WIDTH+5, 16);
     printf("Z: 暂停");
-    gotoxy(WIDTH+5, 18);
+    gotoxy(WIDTH+5, 17);
     printf("Q: 退出");
     gotoxy(WIDTH+5, 19);
     printf("注意: 按键有冷却");
@@ -414,62 +576,6 @@ void drawPauseMessage() {
     }
 }
 
-// 生成新方块
-void generateNewShape() {
-    // 把 nextShape 赋值给 currentShape
-    memcpy(currentShape, nextShape, sizeof(currentShape));
-    currentX = WIDTH/2 - 2;
-    currentY = 0;
-    currentColor = nextColor; // 切换颜色
-    // 生成新的 nextShape 和 nextColor
-    int shapeIndex = rand() % 7;
-    memcpy(nextShape, shapes[shapeIndex], sizeof(nextShape));
-    nextColor = 1 + rand() % 7; // 1~7，避免黑色
-}
-
-// 检查是否可以移动
-int canMove(int x, int y) {
-    for(int i = 0; i < 4; i++) {
-        for(int j = 0; j < 4; j++) {
-            if(currentShape[i][j]) {
-                int newX = x + j;
-                int newY = y + i;
-                if(newX < 0 || newX >= WIDTH || newY >= HEIGHT) return 0;
-                if(newY >= 0 && gameArea[newY][newX]) return 0;
-            }
-        }
-    }
-    return 1;
-}
-
-// 检查任意形状在指定位置是否可以移动（用于旋转判定）
-int canMoveShape(int shape[4][4], int x, int y) {
-    for(int i = 0; i < 4; i++) {
-        for(int j = 0; j < 4; j++) {
-            if(shape[i][j]) {
-                int newX = x + j;
-                int newY = y + i;
-                if(newX < 0 || newX >= WIDTH || newY >= HEIGHT) return 0;
-                if(newY >= 0 && gameArea[newY][newX]) return 0;
-            }
-        }
-    }
-    return 1;
-}
-
-// 旋转方块
-void rotateShape() {
-    int temp[4][4];
-    for(int i = 0; i < 4; i++)
-        for(int j = 0; j < 4; j++)
-            temp[i][j] = currentShape[3-j][i];
-    
-    // 只有旋转后不越界且不重叠才允许旋转
-    if(canMoveShape(temp, currentX, currentY)) {
-        memcpy(currentShape, temp, sizeof(currentShape));
-    }
-}
-
 // 方块下落
 void moveDown() {
     if(canMove(currentX, currentY + 1)) {
@@ -478,17 +584,18 @@ void moveDown() {
         // 固定当前方块
         for(int i = 0; i < 4; i++) {
             for(int j = 0; j < 4; j++) {
-                if(currentShape[i][j]) {
-                    if(currentY + i >= 0) {
-                        gameArea[currentY + i][currentX + j] = currentColor;
-                    }
+                if(currentShape[i][j] && currentY + i >= 0) {
+                    gameArea[currentY + i][currentX + j] = currentColor;
                 }
             }
         }
+        playSound(SOUND_DROP);
         clearLines();
         generateNewShape();
         if(!canMove(currentX, currentY)) {
             gameOver = 1;
+            playSound(SOUND_GAMEOVER);
+            stopBackgroundMusic();
         }
     }
 }
@@ -506,89 +613,27 @@ void clearLines() {
         }
         if(isFull) {
             linesCleared++;
+            // 从当前行向下移动所有行
             for(int k = i; k > 0; k--) {
                 for(int j = 0; j < WIDTH; j++) {
                     gameArea[k][j] = gameArea[k-1][j];
                 }
             }
+            // 清空最底行
             for(int j = 0; j < WIDTH; j++) {
                 gameArea[0][j] = 0;
             }
-            i++;
+            i++; // 重新检查当前行(已被上一行替换)
         }
     }
-    score += linesCleared * 10;
-    if(score > highScore) {
-        highScore = score;
-    }
-}
-
-// 根据分数获取下落速度
-int getSpeedByScore() {
-    int baseSpeed;
     
-    // 根据难度级别设置基础速度
-    switch(currentDifficulty) {
-        case DIFFICULTY_EASY:
-            baseSpeed = SPEED_EASY;
-            break;
-        case DIFFICULTY_NORMAL:
-            baseSpeed = SPEED_NORMAL;
-            break;
-        case DIFFICULTY_HARD:
-            baseSpeed = SPEED_HARD;
-            break;
-        case DIFFICULTY_HELL:
-            baseSpeed = SPEED_HELL;
-            break;
-        default:
-            baseSpeed = SPEED_NORMAL;
-    }
-    
-    // 随着分数增加，速度逐渐加快
-    double speed = 1.0 + 9.0 * (score / 10000.0); // 1倍到10倍线性增长
-    return (int)(baseSpeed / speed);
-}
-
-// 切换方块符号
-void switchBlockSymbol() {
-    currentBlockIndex = (currentBlockIndex + 1) % BLOCK_OPTION_COUNT;
-}
-
-// 方块样式更改界面
-void styleChangeScreen() {
-    system("cls");
-    int running = 1;
-    while (running) {
-        system("cls");
-        setColor(COLOR_CYAN);
-        gotoxy(10, 6);
-        printf(" %s <--这是当前方块样式", BLOCK_OPTIONS[currentBlockIndex]);
-        setColor(COLOR_WHITE);
-        gotoxy(10, 10);
-        printf("（按X键切换方块，按Q键退出，若显示为空，请按x进行样式更改）");
-        int key = getch();
-        if (key == 'x' || key == 'X') {
-            switchBlockSymbol();
-        } else if (key == 'q' || key == 'Q') {
-            running = 0;
+    if(linesCleared > 0) {
+        playSound(SOUND_CLEAR);
+        score += linesCleared * 10;
+        if(score > highScore) {
+            highScore = score;
         }
     }
-}
-
-// 初始化游戏
-void initGame() {
-    system("cls");
-    srand(time(NULL));
-    score =0;
-    gameOver = 0;
-    isPaused = 0;
-    memset(gameArea, 0, sizeof(gameArea));
-    // 先生成 nextShape
-    int shapeIndex = rand() % 7;
-    memcpy(nextShape, shapes[shapeIndex], sizeof(nextShape));
-    // 生成第一个 currentShape
-    generateNewShape();
 }
 
 // 游戏主循环
@@ -598,23 +643,23 @@ void gameLoop() {
     int needRedraw = 1; // 是否需要重绘
     
     while(!gameOver) {
+        // 达到胜利条件
         if(score >= 10000) {
             gameOver = 1;
+            stopBackgroundMusic();
             system("cls");
-            gotoxy(15, 10);
-            printf("你赢了！最终得分：%d", score);
-            gotoxy(15, 11);
-            printf("最高分纪录：%d", highScore);
-            gotoxy(15, 13);
-            printf("按任意键退出...");
+            gotoxy(15, 10); printf("你赢了！最终得分：%d", score);
+            gotoxy(15, 11); printf("最高分纪录：%d", highScore);
+            gotoxy(15, 13); printf("按任意键退出...");
             getch();
             break;
         }
         
         needRedraw = 0; // 默认不需要重绘
         
+        // 处理键盘输入
         if(kbhit()) {
-            // 检查按键冷却时间
+            // 按键冷却检查
             clock_t currentTime = clock();
             if (currentTime - lastKeyTime < KEY_COOLDOWN) {
                 // 如果冷却时间未到，忽略按键
@@ -624,31 +669,34 @@ void gameLoop() {
             
             lastKeyTime = currentTime; // 更新上次按键时间
             int key = getch();
+            
             // 处理方向键
             if(key == 224) {  // 方向键的第一个字符
                 key = getch();  // 获取方向键的第二个字符
                 if(!isPaused) {  // 只有在非暂停状态才处理方向键
                     switch(key) {
-                        case 72:  // 上箭头
+                        case 72: // 上箭头：旋转
                             needRedraw = 1;
                             rotateShape();
                             break;
-                        case 80:  // 下箭头
+                        case 80: // 下箭头：下移
                             if(canMove(currentX, currentY + 1)) {
                                 needRedraw = 1;
                                 currentY++;
                             }
                             break;
-                        case 75:  // 左箭头
+                        case 75: // 左箭头：左移
                             if(canMove(currentX-1, currentY)) {
                                 needRedraw = 1;
                                 currentX--;
+                                playSound(SOUND_MOVE);
                             }
                             break;
-                        case 77:  // 右箭头
+                        case 77: // 右箭头：右移
                             if(canMove(currentX+1, currentY)) {
                                 needRedraw = 1;
                                 currentX++;
+                                playSound(SOUND_MOVE);
                             }
                             break;
                     }
@@ -656,64 +704,73 @@ void gameLoop() {
             } else {
                 // 处理其他按键
                 switch(key) {
-                    case 'a':
-                    case 'A':
+                    case 'a': case 'A': // 左移
                         if(!isPaused && canMove(currentX-1, currentY)) {
                             needRedraw = 1;
                             currentX--;
+                            playSound(SOUND_MOVE); // 播放移动音效
                         }
                         break;
-                    case 'd':
-                    case 'D':
+                    case 'd': case 'D': // 右移
                         if(!isPaused && canMove(currentX+1, currentY)) {
                             needRedraw = 1;
                             currentX++;
+                            playSound(SOUND_MOVE); // 播放移动音效
                         }
                         break;
-                    case 'w':
-                    case 'W':
+                    case 'w': case 'W': // 旋转
                         if(!isPaused) {
                             needRedraw = 1;
                             rotateShape();
                         }
                         break;
-                    case 's':
-                    case 'S':
+                    case 's': case 'S': // 下移
                         if(!isPaused && canMove(currentX, currentY + 1)) {
                             needRedraw = 1;
                             currentY++;
                         }
                         break;
-                    case ' ':
+                    case ' ': // 快速下落
                         if(!isPaused) {
                             needRedraw = 1;
                             while(canMove(currentX, currentY+1)) currentY++;
                         }
                         break;
-                    case 'z':
-                    case 'Z':
+                    case 'z': case 'Z': // 暂停/继续
                         needRedraw = 1;
                         isPaused = !isPaused;
+                        if(isPaused) {
+                            stopBackgroundMusic(); // 暂停时停止背景音乐
+                        } else {
+                            playBackgroundMusic(); // 继续时播放背景音乐
+                        }
                         break;
-                    case 'q':
-                    case 'Q':
+                    case 'q': case 'Q': // 退出
                         gameOver = 1;
+                        stopBackgroundMusic(); // 退出时停止背景音乐
+                        break;
+                    case 'm': case 'M': // 音乐开关
+                        isMusicEnabled = !isMusicEnabled;
+                        if(isMusicEnabled) {
+                            playBackgroundMusic();
+                        } else {
+                            stopBackgroundMusic();
+                        }
                         break;
                 }
             }
         }
         
-        if(!isPaused) {
-            if(clock() - lastMove > getSpeedByScore()) {
-                needRedraw = 1;
-                moveDown();
-                lastMove = clock();
-            }
+        // 自动下落
+        if(!isPaused && clock() - lastMove > getSpeedByScore()) {
+            needRedraw = 1;
+            moveDown();
+            lastMove = clock();
         }
         
-        // 只有在需要重绘时才绘制
+        // 渲染游戏画面
         if(needRedraw || prevX != currentX || prevY != currentY) {
-            // 如果位置变化，先擦除旧位置
+            // 擦除旧位置
             if(prevX != currentX || prevY != currentY) {
                 setColor(COLOR_BLACK);
                 for(int i = 0; i < 4; i++) {
@@ -751,7 +808,7 @@ void gameLoop() {
             prevY = currentY;
         }
         
-        // 如果游戏暂停，显示暂停信息
+        // 显示暂停信息
         drawPauseMessage();
         
         Sleep(75);
@@ -772,15 +829,18 @@ void initTwoPlayerGame() {
     memset(gameArea, 0, sizeof(gameArea));
     memset(gameArea2, 0, sizeof(gameArea2));
     
-    // 为玩家1生成方块
+    // 初始化两位玩家的方块
     int shapeIndex = rand() % 7;
     memcpy(nextShape, shapes[shapeIndex], sizeof(nextShape));
     generateNewShape();
     
-    // 为玩家2生成方块
     shapeIndex = rand() % 7;
     memcpy(nextShape2, shapes[shapeIndex], sizeof(nextShape2));
     generateNewShape2();
+    
+    // 停止菜单音乐，播放游戏背景音乐
+    stopMenuMusic();
+    playBackgroundMusic();
 }
 
 // 绘制双人模式边框
@@ -924,15 +984,19 @@ void drawTwoPlayerScore() {
     printf("当前难度: ");
     switch(currentDifficulty) {
         case DIFFICULTY_EASY:
+            setColor(COLOR_GREEN);
             printf("简单");
             break;
         case DIFFICULTY_NORMAL:
+            setColor(COLOR_YELLOW);
             printf("普通");
             break;
         case DIFFICULTY_HARD:
+            setColor(COLOR_PURPLE);
             printf("困难");
             break;
         case DIFFICULTY_HELL:
+            setColor(COLOR_RED);
             printf("地狱");
             break;
     }
@@ -1012,13 +1076,11 @@ void moveDown2() {
     if(canMove2(currentX2, currentY2 + 1)) {
         currentY2++;
     } else {
-        // 固定当前方块
+        // 固定方块
         for(int i = 0; i < 4; i++) {
             for(int j = 0; j < 4; j++) {
-                if(currentShape2[i][j]) {
-                    if(currentY2 + i >= 0) {
-                        gameArea2[currentY2 + i][currentX2 + j] = currentColor2;
-                    }
+                if(currentShape2[i][j] && currentY2 + i >= 0) {
+                    gameArea2[currentY2 + i][currentX2 + j] = currentColor2;
                 }
             }
         }
@@ -1043,15 +1105,17 @@ void clearLines2() {
         }
         if(isFull) {
             linesCleared++;
+            // 从当前行向下移动所有行
             for(int k = i; k > 0; k--) {
                 for(int j = 0; j < WIDTH; j++) {
                     gameArea2[k][j] = gameArea2[k-1][j];
                 }
             }
+            // 清空最底行
             for(int j = 0; j < WIDTH; j++) {
                 gameArea2[0][j] = 0;
             }
-            i++;
+            i++; // 重新检查当前行
         }
     }
     score2 += linesCleared * 10;
@@ -1081,8 +1145,9 @@ void twoPlayerGameLoop() {
     while(!(gameOver && gameOver2)) {
         needRedraw = 0;
         
+        // 处理键盘输入
         if(kbhit()) {
-            // 检查按键冷却时间
+            // 按键冷却检查
             clock_t currentTime = clock();
             if (currentTime - lastKeyTime < KEY_COOLDOWN) {
                 // 如果冷却时间未到，忽略按键
@@ -1122,41 +1187,35 @@ void twoPlayerGameLoop() {
                 }
             } else {
                 switch(key) {
-                    case 'a':
-                    case 'A':  // 玩家1左移
+                    case 'a': case 'A':  // 玩家1左移
                         if(!isPaused && !gameOver && canMove(currentX-1, currentY)) {
                             needRedraw = 1;
                             currentX--;
                         }
                         break;
-                    case 'd':
-                    case 'D':  // 玩家1右移
+                    case 'd': case 'D':  // 玩家1右移
                         if(!isPaused && !gameOver && canMove(currentX+1, currentY)) {
                             needRedraw = 1;
                             currentX++;
                         }
                         break;
-                    case 'w':
-                    case 'W':  // 玩家1旋转
+                    case 'w': case 'W':  // 玩家1旋转
                         if(!isPaused && !gameOver) {
                             needRedraw = 1;
                             rotateShape();
                         }
                         break;
-                    case 's':
-                    case 'S':  // 玩家1下移
+                    case 's': case 'S':  // 玩家1下移
                         if(!isPaused && !gameOver && canMove(currentX, currentY + 1)) {
                             needRedraw = 1;
                             currentY++;
                         }
                         break;
-                    case 'z':
-                    case 'Z':  // 暂停
+                    case 'z': case 'Z':  // 暂停
                         needRedraw = 1;
                         isPaused = !isPaused;
                         break;
-                    case 'q':
-                    case 'Q':  // 退出
+                    case 'q': case 'Q':  // 退出
                         gameOver = 1;
                         gameOver2 = 1;
                         break;
@@ -1164,18 +1223,17 @@ void twoPlayerGameLoop() {
             }
         }
         
-        if(!isPaused) {
-            if(clock() - lastMove > getSpeedByScore()) {
-                needRedraw = 1;
-                if(!gameOver) moveDown();   // 玩家1方块下落
-                if(!gameOver2) moveDown2();  // 玩家2方块下落
-                lastMove = clock();
-            }
+        // 自动下落
+        if(!isPaused && clock() - lastMove > getSpeedByScore()) {
+            needRedraw = 1;
+            if(!gameOver) moveDown();
+            if(!gameOver2) moveDown2();
+            lastMove = clock();
         }
         
-        // 只有在需要重绘时才绘制
+        // 渲染游戏画面
         if(needRedraw || prevX != currentX || prevY != currentY || prevX2 != currentX2 || prevY2 != currentY2) {
-            // 如果位置变化，先擦除旧位置
+            // 擦除玩家1旧位置
             if(prevX != currentX || prevY != currentY) {
                 setColor(COLOR_BLACK);
                 for(int i = 0; i < 4; i++) {
@@ -1188,6 +1246,7 @@ void twoPlayerGameLoop() {
                 }
             }
             
+            // 擦除玩家2旧位置
             if(prevX2 != currentX2 || prevY2 != currentY2) {
                 setColor(COLOR_BLACK);
                 for(int i = 0; i < 4; i++) {
@@ -1207,7 +1266,7 @@ void twoPlayerGameLoop() {
             drawTwoPlayerScore();
             drawTwoPlayerControls();
             
-            // 绘制当前方块 - 玩家1
+            // 绘制玩家1当前方块
             if(!isPaused && !gameOver) {
                 setColor(currentColor);
                 for(int i = 0; i < 4; i++) {
@@ -1220,7 +1279,7 @@ void twoPlayerGameLoop() {
                 }
             }
             
-            // 绘制当前方块 - 玩家2
+            // 绘制玩家2当前方块
             if(!isPaused && !gameOver2) {
                 setColor(currentColor2);
                 for(int i = 0; i < 4; i++) {
@@ -1240,10 +1299,213 @@ void twoPlayerGameLoop() {
             prevY2 = currentY2;
         }
         
-        // 如果游戏暂停，显示暂停信息
+        // 显示暂停信息
         drawTwoPlayerPauseMessage();
         
         Sleep(75);
+    }
+}
+
+// 播放背景音乐
+void playBackgroundMusic() {
+    if (isMusicEnabled) {
+        // 检查文件是否存在
+        FILE* file = fopen(MUSIC_THEME, "r");
+        if (file) {
+            fclose(file);
+            // 使用mciSendString播放背景音乐，循环播放
+            char command[100];
+            sprintf(command, "open \"%s\" type mpegvideo alias bgMusic", MUSIC_THEME);
+            MCIERROR err = mciSendString(command, NULL, 0, NULL);
+            if (err != 0) {
+                // 如果打开失败，尝试使用另一种方式
+                sprintf(command, "open \"%s\" alias bgMusic", MUSIC_THEME);
+                err = mciSendString(command, NULL, 0, NULL);
+                if (err != 0) {
+                    // 如果仍然失败，设置音乐为关闭状态
+                    isMusicEnabled = 0;
+                    return;
+                }
+            }
+            err = mciSendString("play bgMusic repeat", NULL, 0, NULL);
+            if (err != 0) {
+                // 如果播放失败，设置音乐为关闭状态
+                isMusicEnabled = 0;
+            }
+        } else {
+            // 如果文件不存在，设置音乐为关闭状态
+            isMusicEnabled = 0;
+        }
+    }
+}
+
+// 停止背景音乐
+void stopBackgroundMusic() {
+    // 先检查bgMusic是否已打开
+    char status[50];
+    if (mciSendString("status bgMusic mode", status, sizeof(status), NULL) == 0) {
+        mciSendString("stop bgMusic", NULL, 0, NULL);
+        mciSendString("close bgMusic", NULL, 0, NULL);
+    }
+}
+
+// 播放音效
+void playSound(const char* sound) {
+    if (isSoundEnabled) {
+        // 检查文件是否存在
+        FILE* file = fopen(sound, "r");
+        if (file) {
+            fclose(file);
+            // 使用PlaySound函数播放音效，异步播放
+            PlaySound(sound, NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+        } else {
+            // 文件不存在，但不需要处理，继续游戏
+        }
+    }
+}
+
+// 检查音效文件是否存在
+void checkSoundFiles() {
+    int missingFiles = 0;
+    const char* soundFiles[] = {
+        SOUND_ROTATE, SOUND_MOVE, SOUND_DROP, 
+        SOUND_CLEAR, SOUND_GAMEOVER,
+        MUSIC_THEME, MUSIC_MENU
+    };
+    
+    for(int i = 0; i < 7; i++) {
+        FILE* file = fopen(soundFiles[i], "r");
+        if(!file) {
+            missingFiles++;
+        } else {
+            fclose(file);
+        }
+    }
+
+    if(missingFiles > 0) {
+        system("cls");
+        setColor(COLOR_YELLOW);
+        gotoxy(5, 10);
+        printf("提示：部分或全部音效文件不存在。请确保以下文件存在于sounds目录：");
+        gotoxy(5, 12); printf("- rotate.wav (旋转音效)");
+        gotoxy(5, 13); printf("- move.wav (移动音效)");
+        gotoxy(5, 14); printf("- drop.wav (方块落地音效)");
+        gotoxy(5, 15); printf("- clear.wav (消行音效)");
+        gotoxy(5, 16); printf("- gameover.wav (游戏结束音效)");
+        gotoxy(5, 17); printf("- theme1.mp3 (游戏背景音乐)");
+        gotoxy(5, 18); printf("- theme2.mp3 (菜单背景音乐)");
+        
+        gotoxy(5, 20);
+        printf("游戏将在没有音效的情况下继续。按任意键继续...");
+        
+        // 全部音效文件都不存在时，自动关闭音效
+        if (missingFiles == 7) {
+            isMusicEnabled = 0;
+            isSoundEnabled = 0;
+        }
+        
+        getch();
+    }
+}
+
+// 创建示例音效文件
+void createSampleSoundFiles() {
+    // 创建WAV文件的简单头部
+    unsigned char wavHeader[44] = {
+        0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 
+        0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74, 0x20,
+        0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 
+        0x44, 0xAC, 0x00, 0x00, 0x88, 0x58, 0x01, 0x00,
+        0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61, 
+        0x00, 0x00, 0x00, 0x00
+    };
+    
+    // 创建WAV音效文件
+    const char* wavFiles[] = {
+        SOUND_ROTATE, SOUND_MOVE, SOUND_DROP, 
+        SOUND_CLEAR, SOUND_GAMEOVER
+    };
+    
+    for(int i = 0; i < 5; i++) {
+        FILE* file = fopen(wavFiles[i], "r");
+        if (!file) {
+            file = fopen(wavFiles[i], "wb");
+            if(file) {
+                fwrite(wavHeader, 1, 44, file);
+                fclose(file);
+            }
+        } else {
+            fclose(file);
+        }
+    }
+
+    // 对于MP3文件，我们不创建空文件，因为MP3格式复杂
+    // 检查游戏音乐和菜单音乐是否存在
+    FILE* file = fopen(MUSIC_THEME, "r");
+    if (!file) {
+        system("cls");
+        setColor(COLOR_YELLOW);
+        gotoxy(5, 10);
+        printf("提示：游戏背景音乐文件 %s 不存在", MUSIC_THEME);
+        gotoxy(5, 11);
+        printf("请添加您自己的MP3音乐文件到sounds目录");
+        gotoxy(5, 13);
+        printf("按任意键继续...");
+        getch();
+    } else {
+        fclose(file);
+    }
+
+    file = fopen(MUSIC_MENU, "r");
+    if(!file) {
+        system("cls");
+        setColor(COLOR_YELLOW);
+        gotoxy(5, 10);
+        printf("提示：菜单背景音乐文件 %s 不存在", MUSIC_MENU);
+        gotoxy(5, 11);
+        printf("请添加您自己的MP3音乐文件到sounds目录");
+        gotoxy(5, 13);
+        printf("按任意键继续...");
+        getch();
+    } else {
+        fclose(file);
+    }
+}
+
+// 播放菜单音乐
+void playMenuMusic() {
+    if (isMusicEnabled) {
+        // 检查文件是否存在
+        FILE* file = fopen(MUSIC_MENU, "r");
+        if(file) {
+            fclose(file);
+            char command[100];
+            sprintf(command, "open \"%s\" type mpegvideo alias menuMusic", MUSIC_MENU);
+            MCIERROR err = mciSendString(command, NULL, 0, NULL);
+            if (err != 0) {
+                // 如果打开失败，尝试使用另一种方式
+                sprintf(command, "open \"%s\" alias menuMusic", MUSIC_MENU);
+                err = mciSendString(command, NULL, 0, NULL);
+                if (err != 0) {
+                    // 如果仍然失败，返回
+                    return;
+                }
+            }
+            err = mciSendString("play menuMusic repeat", NULL, 0, NULL);
+            if (err != 0) {
+                // 如果播放失败，不做处理
+            }
+        }
+    }
+}
+
+// 停止菜单音乐
+void stopMenuMusic() {
+    // 先检查menuMusic是否已打开
+    char status[50];
+    if (mciSendString("status menuMusic mode", status, sizeof(status), NULL) == 0) {
+        mciSendString("stop menuMusic", NULL, 0, NULL);
+        mciSendString("close menuMusic", NULL, 0, NULL);
     }
 }
 
@@ -1256,6 +1518,15 @@ int main() {
     CONSOLE_CURSOR_INFO cursor_info = {1, 0};
     SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursor_info);
 
+    // 创建sounds目录（如果不存在）
+    CreateDirectory("sounds", NULL);
+    
+    // 创建示例音效文件
+    createSampleSoundFiles();
+    
+    // 检查音效文件
+    checkSoundFiles();
+
     // 菜单界面
     showStartScreen();
     while (1) {
@@ -1263,9 +1534,11 @@ int main() {
             // 双人模式
             initTwoPlayerGame();
             twoPlayerGameLoop();
+            stopBackgroundMusic(); // 游戏结束停止背景音乐
             system("cls");
             gotoxy(15, 10);
             if (gameOver && gameOver2) {
+                playSound(SOUND_GAMEOVER);
                 if (score > score2) {
                     printf("游戏结束！玩家1获胜！");
                 } else if (score2 > score) {
@@ -1278,33 +1551,36 @@ int main() {
             } else {
                 printf("玩家2失败，游戏继续...");
             }
-            gotoxy(15, 12);
-            printf("玩家1得分：%d", score);
-            gotoxy(15, 13);
-            printf("玩家2得分：%d", score2);
-            gotoxy(15, 14);
-            printf("最高分纪录：%d", highScore);
+            
+            gotoxy(15, 12); printf("玩家1得分：%d", score);
+            gotoxy(15, 13); printf("玩家2得分：%d", score2);
+            gotoxy(15, 14); printf("最高分纪录：%d", highScore);
             gotoxy(15, 16);
-            printf("按任意键重新开始，Q键退至菜单，esc键退出游戏");
+            printf("按任意键重新开始，Q键退至菜单，Esc键退出游戏");
         } else {
             // 单人模式
             initGame();
             gameLoop();
+            stopBackgroundMusic(); // 游戏结束停止背景音乐
             system("cls");
-            gotoxy(15, 10);
-            printf("游戏结束！最终得分：%d", score);
-            gotoxy(15, 11);
-            printf("最高分纪录：%d", highScore);
+            gotoxy(15, 10); printf("游戏结束！最终得分：%d", score);
+            gotoxy(15, 11); printf("最高分纪录：%d", highScore);
             gotoxy(15, 13);
-            printf("按任意键重新开始，Q键退至菜单，esc键退出游戏");
+            printf("按任意键重新开始，Q键退至菜单，Esc键退出游戏");
         }
         
         int key = getch();
         if (key == 'q' || key == 'Q') {
+            playMenuMusic(); // 返回菜单时播放菜单音乐
             showStartScreen(); // 返回菜单
         } else if (key == 27) { // ESC键
             break; // 退出游戏
         }
     }
+    
+    // 确保退出时停止所有音乐
+    stopBackgroundMusic();
+    stopMenuMusic();
+    
     return 0;
 } 
