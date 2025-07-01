@@ -6,6 +6,7 @@
 #include <string.h>
 #include <mmsystem.h>  // 添加多媒体库头文件
 #pragma comment(lib, "winmm.lib")  // 链接winmm库
+#include "embedded_audio.h"
 
 // 游戏区域定义
 #define WIDTH 12
@@ -45,13 +46,13 @@ clock_t lastKeyTime = 0;
 int currentDifficulty = DIFFICULTY_NORMAL; // 默认难度为普通
 
 // 音乐和音效相关
-#define SOUND_ROTATE "sounds\\rotate.wav"    // 旋转音效
-#define SOUND_MOVE "sounds\\move.wav"        // 移动音效
-#define SOUND_DROP "sounds\\drop.wav"        // 方块落地音效
-#define SOUND_CLEAR "sounds\\clear.wav"      // 消行音效
-#define SOUND_GAMEOVER "sounds\\gameover.wav"// 游戏结束音效
-#define MUSIC_THEME "sounds\\theme1.mp3"      // 游戏背景音乐
-#define MUSIC_MENU "sounds\\theme2.mp3"      // 菜单音乐
+#define SOUND_ROTATE "rotate"    // 旋转音效
+#define SOUND_MOVE "move"        // 移动音效
+#define SOUND_DROP "drop"        // 方块落地音效
+#define SOUND_CLEAR "clear"      // 消行音效
+#define SOUND_GAMEOVER "gameover"// 游戏结束音效
+#define MUSIC_THEME "theme1"      // 游戏背景音乐
+#define MUSIC_MENU "theme2"      // 菜单音乐
 int isMusicEnabled = 1;                      // 背景音乐开关
 int isSoundEnabled = 1;                      // 音效开关
 
@@ -180,6 +181,7 @@ void switchBlockSymbol(); // 切换方块显示样式，在预定义样式中循
 int getSpeedByScore(); // 根据当前分数计算方块下落速度
 
 // 音效相关
+void initAudioResources(); // 初始化音频资源
 void playBackgroundMusic(); // 播放游戏背景音乐
 void stopBackgroundMusic(); // 停止游戏背景音乐
 void playSound(const char* sound); // 播放指定的音效文件
@@ -1306,42 +1308,106 @@ void twoPlayerGameLoop() {
     }
 }
 
+// 初始化音频资源
+void initAudioResources() {
+    // 音频资源初始化逻辑
+}
+
 // 播放背景音乐
 void playBackgroundMusic() {
     if (isMusicEnabled) {
-        // 检查文件是否存在
-        FILE* file = fopen(MUSIC_THEME, "r");
+        // 创建临时文件
+        char tempPath[MAX_PATH];
+        char tempFileName[MAX_PATH];
+        GetTempPath(MAX_PATH, tempPath);
+        sprintf(tempFileName, "%s\\bgMusic.mp3", tempPath);
+        
+        // 写入临时文件
+        FILE* file = fopen(tempFileName, "wb");
         if (file) {
+            fwrite(theme1_data, 1, theme1_size, file);
             fclose(file);
-            // 使用mciSendString播放背景音乐，循环播放
-            char command[100];
-            sprintf(command, "open \"%s\" type mpegvideo alias bgMusic", MUSIC_THEME);
-            MCIERROR err = mciSendString(command, NULL, 0, NULL);
-            if (err != 0) {
-                // 如果打开失败，尝试使用另一种方式
-                sprintf(command, "open \"%s\" alias bgMusic", MUSIC_THEME);
-                err = mciSendString(command, NULL, 0, NULL);
-                if (err != 0) {
-                    // 如果仍然失败，设置音乐为关闭状态
-                    isMusicEnabled = 0;
-                    return;
-                }
+            
+            // 使用MCI播放
+            char command[256];
+            sprintf(command, "open \"%s\" type mpegvideo alias bgMusic", tempFileName);
+            if (mciSendString(command, NULL, 0, NULL) == 0) {
+                mciSendString("play bgMusic repeat", NULL, 0, NULL);
             }
-            err = mciSendString("play bgMusic repeat", NULL, 0, NULL);
-            if (err != 0) {
-                // 如果播放失败，设置音乐为关闭状态
-                isMusicEnabled = 0;
-            }
-        } else {
-            // 如果文件不存在，设置音乐为关闭状态
-            isMusicEnabled = 0;
+            // 删除临时文件
+            DeleteFile(tempFileName);
         }
     }
 }
 
+// 播放菜单音乐
+void playMenuMusic() {
+    if (isMusicEnabled) {
+        // 创建临时文件
+        char tempPath[MAX_PATH];
+        char tempFileName[MAX_PATH];
+        GetTempPath(MAX_PATH, tempPath);
+        sprintf(tempFileName, "%s\\menuMusic.mp3", tempPath);
+        
+        // 写入临时文件
+        FILE* file = fopen(tempFileName, "wb");
+        if (file) {
+            fwrite(theme2_data, 1, theme2_size, file);
+            fclose(file);
+            
+            // 使用MCI播放
+            char command[256];
+            sprintf(command, "open \"%s\" type mpegvideo alias menuMusic", tempFileName);
+            if (mciSendString(command, NULL, 0, NULL) == 0) {
+                mciSendString("play menuMusic repeat", NULL, 0, NULL);
+            }
+            // 删除临时文件
+            DeleteFile(tempFileName);
+        }
+    }
+}
+
+// 播放音效
+void playSound(const char* sound) {
+    if (!isSoundEnabled) return;
+    
+    const unsigned char* data = NULL;
+    size_t size = 0;
+    
+    if (strcmp(sound, SOUND_ROTATE) == 0) {
+        data = rotate_data;
+        size = rotate_size;
+    } else if (strcmp(sound, SOUND_MOVE) == 0) {
+        data = move_data;
+        size = move_size;
+    } else if (strcmp(sound, SOUND_DROP) == 0) {
+        data = drop_data;
+        size = drop_size;
+    } else if (strcmp(sound, SOUND_CLEAR) == 0) {
+        data = clear_data;
+        size = clear_size;
+    } else if (strcmp(sound, SOUND_GAMEOVER) == 0) {
+        data = gameover_data;
+        size = gameover_size;
+    }
+    
+    if (data) {
+        PlaySound((LPCSTR)data, NULL, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+    }
+}
+
+// 检查音效文件是否存在 - 不再需要，因为音频已嵌入
+void checkSoundFiles() {
+    // 音频已嵌入，无需检查
+}
+
+// 创建示例音效文件 - 不再需要，因为音频已嵌入
+void createSampleSoundFiles() {
+    // 音频已嵌入，无需创建示例文件
+}
+
 // 停止背景音乐
 void stopBackgroundMusic() {
-    // 先检查bgMusic是否已打开
     char status[50];
     if (mciSendString("status bgMusic mode", status, sizeof(status), NULL) == 0) {
         mciSendString("stop bgMusic", NULL, 0, NULL);
@@ -1349,159 +1415,8 @@ void stopBackgroundMusic() {
     }
 }
 
-// 播放音效
-void playSound(const char* sound) {
-    if (isSoundEnabled) {
-        // 检查文件是否存在
-        FILE* file = fopen(sound, "r");
-        if (file) {
-            fclose(file);
-            // 使用PlaySound函数播放音效，异步播放
-            PlaySound(sound, NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
-        } else {
-            // 文件不存在，但不需要处理，继续游戏
-        }
-    }
-}
-
-// 检查音效文件是否存在
-void checkSoundFiles() {
-    int missingFiles = 0;
-    const char* soundFiles[] = {
-        SOUND_ROTATE, SOUND_MOVE, SOUND_DROP, 
-        SOUND_CLEAR, SOUND_GAMEOVER,
-        MUSIC_THEME, MUSIC_MENU
-    };
-    
-    for(int i = 0; i < 7; i++) {
-        FILE* file = fopen(soundFiles[i], "r");
-        if(!file) {
-            missingFiles++;
-        } else {
-            fclose(file);
-        }
-    }
-
-    if(missingFiles > 0) {
-        system("cls");
-        setColor(COLOR_YELLOW);
-        gotoxy(5, 10);
-        printf("提示：部分或全部音效文件不存在。请确保以下文件存在于sounds目录：");
-        gotoxy(5, 12); printf("- rotate.wav (旋转音效)");
-        gotoxy(5, 13); printf("- move.wav (移动音效)");
-        gotoxy(5, 14); printf("- drop.wav (方块落地音效)");
-        gotoxy(5, 15); printf("- clear.wav (消行音效)");
-        gotoxy(5, 16); printf("- gameover.wav (游戏结束音效)");
-        gotoxy(5, 17); printf("- theme1.mp3 (游戏背景音乐)");
-        gotoxy(5, 18); printf("- theme2.mp3 (菜单背景音乐)");
-        
-        gotoxy(5, 20);
-        printf("游戏将在没有音效的情况下继续。按任意键继续...");
-        
-        // 全部音效文件都不存在时，自动关闭音效
-        if (missingFiles == 7) {
-            isMusicEnabled = 0;
-            isSoundEnabled = 0;
-        }
-        
-        getch();
-    }
-}
-
-// 创建示例音效文件
-void createSampleSoundFiles() {
-    // 创建WAV文件的简单头部
-    unsigned char wavHeader[44] = {
-        0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 
-        0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74, 0x20,
-        0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 
-        0x44, 0xAC, 0x00, 0x00, 0x88, 0x58, 0x01, 0x00,
-        0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61, 
-        0x00, 0x00, 0x00, 0x00
-    };
-    
-    // 创建WAV音效文件
-    const char* wavFiles[] = {
-        SOUND_ROTATE, SOUND_MOVE, SOUND_DROP, 
-        SOUND_CLEAR, SOUND_GAMEOVER
-    };
-    
-    for(int i = 0; i < 5; i++) {
-        FILE* file = fopen(wavFiles[i], "r");
-        if (!file) {
-            file = fopen(wavFiles[i], "wb");
-            if(file) {
-                fwrite(wavHeader, 1, 44, file);
-                fclose(file);
-            }
-        } else {
-            fclose(file);
-        }
-    }
-
-    // 对于MP3文件，我们不创建空文件，因为MP3格式复杂
-    // 检查游戏音乐和菜单音乐是否存在
-    FILE* file = fopen(MUSIC_THEME, "r");
-    if (!file) {
-        system("cls");
-        setColor(COLOR_YELLOW);
-        gotoxy(5, 10);
-        printf("提示：游戏背景音乐文件 %s 不存在", MUSIC_THEME);
-        gotoxy(5, 11);
-        printf("请添加您自己的MP3音乐文件到sounds目录");
-        gotoxy(5, 13);
-        printf("按任意键继续...");
-        getch();
-    } else {
-        fclose(file);
-    }
-
-    file = fopen(MUSIC_MENU, "r");
-    if(!file) {
-        system("cls");
-        setColor(COLOR_YELLOW);
-        gotoxy(5, 10);
-        printf("提示：菜单背景音乐文件 %s 不存在", MUSIC_MENU);
-        gotoxy(5, 11);
-        printf("请添加您自己的MP3音乐文件到sounds目录");
-        gotoxy(5, 13);
-        printf("按任意键继续...");
-        getch();
-    } else {
-        fclose(file);
-    }
-}
-
-// 播放菜单音乐
-void playMenuMusic() {
-    if (isMusicEnabled) {
-        // 检查文件是否存在
-        FILE* file = fopen(MUSIC_MENU, "r");
-        if(file) {
-            fclose(file);
-            char command[100];
-            sprintf(command, "open \"%s\" type mpegvideo alias menuMusic", MUSIC_MENU);
-            MCIERROR err = mciSendString(command, NULL, 0, NULL);
-            if (err != 0) {
-                // 如果打开失败，尝试使用另一种方式
-                sprintf(command, "open \"%s\" alias menuMusic", MUSIC_MENU);
-                err = mciSendString(command, NULL, 0, NULL);
-                if (err != 0) {
-                    // 如果仍然失败，返回
-                    return;
-                }
-            }
-            err = mciSendString("play menuMusic repeat", NULL, 0, NULL);
-            if (err != 0) {
-                // 如果播放失败，不做处理
-            }
-        }
-    }
-}
-
 // 停止菜单音乐
 void stopMenuMusic() {
-    // 先检查menuMusic是否已打开
     char status[50];
     if (mciSendString("status menuMusic mode", status, sizeof(status), NULL) == 0) {
         mciSendString("stop menuMusic", NULL, 0, NULL);
@@ -1517,15 +1432,6 @@ int main() {
     // 隐藏光标
     CONSOLE_CURSOR_INFO cursor_info = {1, 0};
     SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursor_info);
-
-    // 创建sounds目录（如果不存在）
-    CreateDirectory("sounds", NULL);
-    
-    // 创建示例音效文件
-    createSampleSoundFiles();
-    
-    // 检查音效文件
-    checkSoundFiles();
 
     // 菜单界面
     showStartScreen();
