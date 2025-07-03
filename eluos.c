@@ -7,7 +7,7 @@
 #include <mmsystem.h>  // 添加多媒体库头文件
 #pragma comment(lib, "winmm.lib")  // 链接winmm库
 #include <direct.h>    // 添加目录操作库，用于创建文件夹
-#include "embedded_audio.h"
+#include "music.h"
 
 // 游戏区域定义
 #define WIDTH 12
@@ -81,6 +81,7 @@ clock_t lastKeyTime = 0;
 #define SPEED_HELL 100
 
 int currentDifficulty = DIFFICULTY_NORMAL; // 默认难度为普通
+int lastSelectedDifficulty = DIFFICULTY_NORMAL;
 
 // 音乐和音效相关
 #define SOUND_ROTATE "rotate"    // 旋转音效
@@ -782,6 +783,7 @@ void gameStartScreen() {
         if(kbhit()) {
             int key = getch();
             if (key == '1') {
+                currentDifficulty = lastSelectedDifficulty;
                 isMultiplayerMode = 0;
                 isAIMode = 0;
                 stopMenuMusic();
@@ -815,6 +817,7 @@ void gameStartScreen() {
         if (btnId > 0) {
             switch (btnId) {
                 case 1: // 单人游戏
+                    currentDifficulty = lastSelectedDifficulty;
                     isMultiplayerMode = 0;
                     isAIMode = 0;
                     stopMenuMusic();
@@ -883,7 +886,7 @@ void gameSettingsScreen() {
             createButton(centerX-1, 8, 10, 3, "难度设置", 1);
             createButton(centerX-1, 12, 10, 3, "样式设置", 2);
             createButton(centerX-1, 16, 10, 3, "音效设置", 3);
-            createButton(centerX-1, 20, 10, 3, "返回设置", 4);
+            createButton(centerX-1, 20, 10, 3, "返回菜单", 4);
             
             // 绘制所有按钮
             drawAllButtons();
@@ -977,7 +980,7 @@ void accountScreen() {
             // 显示当前登录状态
             
             if (isLoggedIn) {
-                gotoxy(centerX -5, 27);
+                gotoxy(centerX -3, 27);
                 printf("当前登录账号: %s", currentUser.username);
             } else {
                 gotoxy(centerX -1, 27);
@@ -1180,7 +1183,20 @@ void drawScore() {
     gotoxy(centerX+WIDTH+3, centerY+8);
     printf("当前分数: %d", score);
     gotoxy(centerX+WIDTH+3, centerY+9);
-    printf("最高分数: %d", highScore);
+    switch(currentDifficulty) {
+        case DIFFICULTY_EASY:
+            printf("最高分数: %d", currentUser.highScoreEasy);
+            break;
+        case DIFFICULTY_NORMAL:
+            printf("最高分数: %d", currentUser.highScoreNormal);
+            break;
+        case DIFFICULTY_HARD:
+            printf("最高分数: %d", currentUser.highScoreHard);
+            break;
+        case DIFFICULTY_HELL:
+            printf("最高分数: %d", currentUser.highScoreHell);
+            break;
+    }
     gotoxy(centerX+WIDTH+3, centerY+10);
     printf("当前难度: ");
     switch(currentDifficulty) {
@@ -2280,15 +2296,19 @@ void difficultySelectScreen() {
             int key = getch();
             if (key == '1') {
                 currentDifficulty = DIFFICULTY_EASY;
+                lastSelectedDifficulty = DIFFICULTY_EASY;
                 needRedraw = 1;
             } else if (key == '2') {
                 currentDifficulty = DIFFICULTY_NORMAL;
+                lastSelectedDifficulty = DIFFICULTY_NORMAL;
                 needRedraw = 1;
             } else if (key == '3') {
                 currentDifficulty = DIFFICULTY_HARD;
+                lastSelectedDifficulty = DIFFICULTY_HARD;
                 needRedraw = 1;
             } else if (key == '4') {
                 currentDifficulty = DIFFICULTY_HELL;
+                lastSelectedDifficulty = DIFFICULTY_HELL;
                 needRedraw = 1;
             } else if (key == '5') {
                 running = 0;
@@ -2301,18 +2321,22 @@ void difficultySelectScreen() {
             switch (btnId) {
                 case 1: // 简单
                     currentDifficulty = DIFFICULTY_EASY;
+                    lastSelectedDifficulty = DIFFICULTY_EASY;
                     needRedraw = 1;
                     break;
                 case 2: // 普通
                     currentDifficulty = DIFFICULTY_NORMAL;
+                    lastSelectedDifficulty = DIFFICULTY_NORMAL;
                     needRedraw = 1;
                     break;
                 case 3: // 困难
                     currentDifficulty = DIFFICULTY_HARD;
+                    lastSelectedDifficulty = DIFFICULTY_HARD;
                     needRedraw = 1;
                     break;
                 case 4: // 地狱
                     currentDifficulty = DIFFICULTY_HELL;
+                    lastSelectedDifficulty = DIFFICULTY_HELL;
                     needRedraw = 1;
                     break;
                 case 5: // 返回设置
@@ -2934,6 +2958,13 @@ void registerScreen() {
     int running = 1;
     int inputFocus = 0; // 0: 无焦点, 1: 账号, 2: 密码
     
+    // Automatically focus on username input
+    gotoxy(centerX-3, centerY);
+    getInput(username, sizeof(username), 0);
+    // Automatically focus on password input
+    gotoxy(centerX-3, centerY+4);
+    getInput(password, sizeof(password), 1);
+    
     while (running) {
         // 处理键盘输入
         if (kbhit()) {
@@ -2963,6 +2994,7 @@ void registerScreen() {
                         UserInfo newUser;
                         strcpy(newUser.username, username);
                         strcpy(newUser.password, password);
+                        // 初始化分数为0
                         newUser.highScoreEasy = 0;
                         newUser.highScoreNormal = 0;
                         newUser.highScoreHard = 0;
@@ -3075,6 +3107,7 @@ void registerScreen() {
                 UserInfo newUser;
                 strcpy(newUser.username, username);
                 strcpy(newUser.password, password);
+                // 初始化分数为0
                 newUser.highScoreEasy = 0;
                 newUser.highScoreNormal = 0;
                 newUser.highScoreHard = 0;
@@ -3175,6 +3208,13 @@ void loginScreen() {
     
     int running = 1;
     int inputFocus = 0; // 0: 无焦点, 1: 账号, 2: 密码
+    
+    // Automatically focus on username input
+    gotoxy(centerX-3, centerY);
+    getInput(username, sizeof(username), 0);
+    // Automatically focus on password input
+    gotoxy(centerX-3, centerY+4);
+    getInput(password, sizeof(password), 1);
     
     while (running) {
         // 处理键盘输入
@@ -3533,7 +3573,7 @@ void drawRankings(int centerX, int centerY, int currentDifficultyView) {
     printf("排名");
     gotoxy(centerX-6, centerY-4);
     printf("用户名");
-    gotoxy(centerX+8, centerY-4);
+    gotoxy(centerX+6, centerY-4);
     printf("分数");
     
     // 绘制分隔线
@@ -3548,7 +3588,7 @@ void drawRankings(int centerX, int centerY, int currentDifficultyView) {
         printf("%2d", i+1);
         gotoxy(centerX-6, centerY-2+i);
         printf("%-15s", rankings[i].username);
-        gotoxy(centerX+8, centerY-2+i);
+        gotoxy(centerX+4, centerY-2+i);
         printf("%6d", rankings[i].score);
     }
     
