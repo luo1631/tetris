@@ -9,6 +9,13 @@
 #include <direct.h>    // 添加目录操作库，用于创建文件夹
 #include "music.h"
 
+// AI API功能开关，默认注释掉
+// #define ENABLE_AI_API
+
+#ifdef ENABLE_AI_API
+#include <curl/curl.h>
+#endif
+
 // 游戏区域定义
 #define WIDTH 12
 #define HEIGHT 20
@@ -291,6 +298,98 @@ void getInput(char* buffer, int maxLen, int isPassword); // 获取用户输入
 // 排行榜相关函数
 void loadRankings(RankingEntry* rankings, int* rankCount, int currentDifficultyView); // 加载排行榜数据
 void drawRankings(int centerX, int centerY, int currentDifficultyView); // 绘制排行榜
+
+#ifdef ENABLE_AI_API
+// 用于存储从API返回的数据的结构体
+struct MemoryStruct {
+    char *memory;
+    size_t size;
+};
+
+// 回调函数，用于处理从API返回的数据
+static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
+    size_t realsize = size * nmemb;
+    struct MemoryStruct *mem = (struct MemoryStruct *)userp;
+
+    char *ptr = realloc(mem->memory, mem->size + realsize + 1);
+    if(!ptr) {
+        printf("内存不足 (realloc返回NULL)\n");
+        return 0;
+    }
+
+    mem->memory = ptr;
+    memcpy(&(mem->memory[mem->size]), contents, realsize);
+    mem->size += realsize;
+    mem->memory[mem->size] = 0;
+
+    return realsize;
+}
+
+// 调用AI API的函数
+void callAIApi(const char *api_key, const char *prompt, char *response, size_t response_size) {
+    CURL *curl;
+    CURLcode res;
+    struct MemoryStruct chunk;
+
+    // 初始化内存结构体
+    chunk.memory = malloc(1);
+    chunk.size = 0;
+
+    // 初始化curl
+    curl_global_init(CURL_GLOBAL_ALL);
+    curl = curl_easy_init();
+    
+    if(curl) {
+        // 设置API URL
+        curl_easy_setopt(curl, CURLOPT_URL, "https://api.openai.com/v1/chat/completions");
+        
+        // 设置请求头
+        struct curl_slist *headers = NULL;
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        
+        char auth_header[256];
+        snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", api_key);
+        headers = curl_slist_append(headers, auth_header);
+        
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        
+        // 构建请求体
+        char request_body[1024];
+        snprintf(request_body, sizeof(request_body), 
+                "{\"model\": \"gpt-3.5-turbo\", \"messages\": [{\"role\": \"user\", \"content\": \"%s\"}], \"temperature\": 0.7}",
+                prompt);
+        
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_body);
+        
+        // 设置回调函数
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+        
+        // 执行请求
+        res = curl_easy_perform(curl);
+        
+        // 检查错误
+        if(res != CURLE_OK) {
+            fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+            strncpy(response, "AI API调用失败", response_size);
+        } else {
+            // 复制API响应到输出缓冲区
+            strncpy(response, chunk.memory, response_size);
+            response[response_size-1] = '\0';  // 确保字符串结束
+        }
+        
+        // 清理
+        curl_easy_cleanup(curl);
+        curl_slist_free_all(headers);
+    } else {
+        strncpy(response, "无法初始化curl", response_size);
+    }
+    
+    // 释放内存
+    free(chunk.memory);
+    curl_global_cleanup();
+}
+#endif
 
 // 根据分数和难度计算下落速度
 int getSpeedByScore() {
@@ -2702,15 +2801,68 @@ void twoPlayerGameOverScreen() {
 
 // AI控制函数，决定AI的下一步移动
 void aiMakeMove() {
-    // 简单AI策略：
-    // 1. 尝试找到最佳的水平位置（尽量靠近左侧）
-    // 2. 尝试旋转方块以获得更好的放置
-    // 3. 快速下落到底部
+#ifdef ENABLE_AI_API
+    // 如果启用了AI API，可以在这里调用AI接口获取更智能的移动策略
+    // 这里只是示例，实际实现需要根据游戏状态构建合适的提示词
+    static char api_key[256] = {0};
+    static int api_key_initialized = 0;
+    
+    // 首次运行时获取API Key
+    if (!api_key_initialized) {
+        FILE *key_file = fopen("api_key.txt", "r");
+        if (key_file) {
+            fgets(api_key, sizeof(api_key), key_file);
+            // 移除可能的换行符
+            api_key[strcspn(api_key, "\r\n")] = 0;
+            fclose(key_file);
+            api_key_initialized = 1;
+        } else {
+            // 如果没有API Key文件，使用简单AI策略
+            api_key_initialized = -1;  // 标记为无法使用API
+        }
+    }
+    
+    // 如果有有效的API Key，使用AI API
+    if (api_key_initialized > 0 && strlen(api_key) > 0) {
+        char prompt[512];
+        char response[2048] = {0};
+        
+        // 构建描述当前游戏状态的提示词
+        snprintf(prompt, sizeof(prompt), 
+                "你是俄罗斯方块AI。当前方块形状:%d，位置:(%d,%d)。"
+                "请只回复一个动作：'left'、'right'、'rotate'或'drop'。",
+                0, currentX2, currentY2);  // 这里简化了，实际应该传递更多游戏状态
+        
+        // 调用AI API
+        callAIApi(api_key, prompt, response, sizeof(response));
+        
+        // 解析AI响应并执行相应动作
+        if (strstr(response, "left") && canMove2(currentX2 - 1, currentY2)) {
+            currentX2--;
+        } else if (strstr(response, "right") && canMove2(currentX2 + 1, currentY2)) {
+            currentX2++;
+        } else if (strstr(response, "rotate")) {
+            rotateShape2();
+        } else if (strstr(response, "drop")) {
+            // 快速下落
+            while (canMove2(currentX2, currentY2 + 1)) {
+                currentY2++;
+            }
+        }
+        return;
+    }
+#endif
+
+    // 增强版AI策略：
+    // 1. 考虑高度差异
+    // 2. 检测并避免产生洞
+    // 3. 优先消除行
+    // 4. 根据难度调整智能程度
     
     // 记录当前状态
     int bestX = currentX2;
     int bestRotation = 0;
-    int bestScore = -1;
+    int bestScore = -99999; // 使用更大的负值作为初始分数
     int tempShape[4][4];
     
     // 复制当前方块形状用于尝试旋转
@@ -2728,35 +2880,114 @@ void aiMakeMove() {
                     y++;
                 }
                 
-                // 计算这个位置的得分（简单策略：优先选择靠左侧且接触已有方块的位置）
-                int score = WIDTH - x; // 优先选择靠左的位置
+                // 创建临时游戏区域用于模拟
+                int tempArea[HEIGHT][WIDTH];
+                memcpy(tempArea, gameArea2, sizeof(tempArea));
                 
-                // 检查是否接触已有方块或底部
-                int hasContact = 0;
-                for (int i = 0; i < 4; i++) {
-                    for (int j = 0; j < 4; j++) {
-                        if (tempShape[i][j]) {
-                            // 检查下方是否有方块或到达底部
-                            if (y + i + 1 >= HEIGHT || 
-                                (y + i + 1 < HEIGHT && gameArea2[y + i + 1][x + j])) {
-                                hasContact++;
-                            }
-                            // 检查左侧是否有方块
-                            if (x + j - 1 >= 0 && x + j - 1 < WIDTH && 
-                                gameArea2[y + i][x + j - 1]) {
-                                hasContact++;
-                            }
-                            // 检查右侧是否有方块
-                            if (x + j + 1 >= 0 && x + j + 1 < WIDTH && 
-                                gameArea2[y + i][x + j + 1]) {
-                                hasContact++;
-                            }
+                // 将当前方块放置在临时区域
+                for(int i = 0; i < 4; i++) {
+                    for(int j = 0; j < 4; j++) {
+                        if(tempShape[i][j] && y + i >= 0 && y + i < HEIGHT && x + j >= 0 && x + j < WIDTH) {
+                            tempArea[y + i][x + j] = 1;
                         }
                     }
                 }
                 
-                // 接触越多越好
-                score += hasContact * 2;
+                // 计算分数因素
+                
+                // 1. 检测消行数量 (最高优先级)
+                int linesCleared = 0;
+                for(int i = 0; i < HEIGHT; i++) {
+                    int isFull = 1;
+                    for(int j = 0; j < WIDTH; j++) {
+                        if(!tempArea[i][j]) {
+                            isFull = 0;
+                            break;
+                        }
+                    }
+                    if(isFull) linesCleared++;
+                }
+                
+                // 2. 计算放置后的最高点
+                int highestPoint = HEIGHT;
+                for(int j = 0; j < WIDTH; j++) {
+                    for(int i = 0; i < HEIGHT; i++) {
+                        if(tempArea[i][j]) {
+                            if(i < highestPoint) highestPoint = i;
+                            break;
+                        }
+                    }
+                }
+                
+                // 3. 计算高度差异 (越平坦越好)
+                int heightDiff = 0;
+                int prevHeight = -1;
+                int maxHeightDiff = 0;
+                
+                for(int j = 0; j < WIDTH; j++) {
+                    int colHeight = HEIGHT;
+                    for(int i = 0; i < HEIGHT; i++) {
+                        if(tempArea[i][j]) {
+                            colHeight = i;
+                            break;
+                        }
+                    }
+                    
+                    if(prevHeight != -1) {
+                        int diff = abs(colHeight - prevHeight);
+                        heightDiff += diff;
+                        if(diff > maxHeightDiff) maxHeightDiff = diff;
+                    }
+                    prevHeight = colHeight;
+                }
+                
+                // 4. 检测洞的数量 (洞是指被方块覆盖的空位)
+                int holes = 0;
+                for(int j = 0; j < WIDTH; j++) {
+                    int foundBlock = 0;
+                    for(int i = 0; i < HEIGHT; i++) {
+                        if(tempArea[i][j]) {
+                            foundBlock = 1;
+                        } else if(foundBlock) {
+                            holes++;
+                        }
+                    }
+                }
+                
+                // 5. 计算"井"的数量 (两侧有方块的连续空列)
+                int wells = 0;
+                for(int j = 0; j < WIDTH; j++) {
+                    for(int i = 0; i < HEIGHT; i++) {
+                        if(!tempArea[i][j]) {
+                            int leftWall = (j == 0) || (j > 0 && tempArea[i][j-1]);
+                            int rightWall = (j == WIDTH-1) || (j < WIDTH-1 && tempArea[i][j+1]);
+                            if(leftWall && rightWall) wells++;
+                        }
+                    }
+                }
+                
+                // 根据难度调整AI智能程度
+                int difficultyFactor = 1;
+                switch(currentDifficulty) {
+                    case DIFFICULTY_EASY: difficultyFactor = 1; break;
+                    case DIFFICULTY_NORMAL: difficultyFactor = 2; break;
+                    case DIFFICULTY_HARD: difficultyFactor = 3; break;
+                    case DIFFICULTY_HELL: difficultyFactor = 4; break;
+                }
+                
+                // 综合评分 (权重可以根据需要调整)
+                int score = 0;
+                score += linesCleared * 100 * difficultyFactor;  // 消行奖励
+                score -= (HEIGHT - highestPoint) * 2;  // 高度惩罚
+                score -= heightDiff * 2;  // 高度差异惩罚
+                score -= maxHeightDiff * 3;  // 最大高度差惩罚
+                score -= holes * 7 * difficultyFactor;  // 洞的惩罚
+                score -= wells * 3;  // 井的惩罚
+                
+                // 额外策略：在高难度下，AI会更倾向于创建四连消（俄罗斯方块中的最高分）
+                if(difficultyFactor >= 3 && linesCleared == 4) {
+                    score += 200;  // 四连消额外奖励
+                }
                 
                 // 更新最佳位置
                 if (score > bestScore) {
@@ -2797,8 +3028,25 @@ void aiMakeMove() {
     }
     
     // 3. 快速下落
-    while (canMove2(currentX2, currentY2 + 1)) {
-        currentY2++;
+    // 在高难度下，AI会直接快速下落
+    // 在低难度下，AI会有一定概率不使用快速下落，给玩家更多反应时间
+    int dropProbability = 0;
+    switch(currentDifficulty) {
+        case DIFFICULTY_EASY: dropProbability = 30; break;    // 30%概率快速下落
+        case DIFFICULTY_NORMAL: dropProbability = 60; break;  // 60%概率快速下落
+        case DIFFICULTY_HARD: dropProbability = 90; break;    // 90%概率快速下落
+        case DIFFICULTY_HELL: dropProbability = 100; break;   // 100%概率快速下落
+    }
+    
+    if (rand() % 100 < dropProbability) {
+        while (canMove2(currentX2, currentY2 + 1)) {
+            currentY2++;
+        }
+    } else {
+        // 只下落一格，给玩家更多反应时间
+        if (canMove2(currentX2, currentY2 + 1)) {
+            currentY2++;
+        }
     }
 }
 
